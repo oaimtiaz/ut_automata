@@ -45,6 +45,7 @@
 #include "amrl_msgs/ColoredText.h"
 #include "amrl_msgs/VisualizationMsg.h"
 #include "sensor_msgs/LaserScan.h"
+#include "sensor_msgs/CompressedImage.h"
 
 using amrl_msgs::Localization2DMsg;
 using amrl_msgs::Point2D;
@@ -54,6 +55,7 @@ using amrl_msgs::ColoredPoint2D;
 using amrl_msgs::ColoredText;
 using amrl_msgs::VisualizationMsg;
 using sensor_msgs::LaserScan;
+using sensor_msgs::CompressedImage;
 using std::vector;
 
 DEFINE_uint64(max_connections, 4, "Maximum number of websocket connections");
@@ -143,6 +145,8 @@ DataMessage GenerateTestData(const MessageHeader& h) {
   msg.lines.resize(h.num_lines);
   msg.arcs.resize(h.num_arcs);
   msg.text_annotations.resize(h.num_text_annotations);
+  msg.vis_image.resize(h.vis_image_size);
+  msg.bev_image.resize(h.bev_image_size);
   for (size_t i = 0; i < msg.laser_scan.size(); ++i) {
     msg.laser_scan[i] = 10 * i;
   }
@@ -182,6 +186,13 @@ DataMessage GenerateTestData(const MessageHeader& h) {
       const char *s = std::to_string(i).c_str();
       strncpy(msg.text_annotations[i].text, s, i/10);
     }
+    for (size_t i = 0; i < msg.vis_image.size(); ++i) {
+      msg.vis_image[i] = 2 * i;
+    }
+
+    for (size_t i = 0; i < msg.bev_image.size(); ++i) {
+      msg.bev_image[i] = 2 * i;
+    }
   }
   return msg;
 }
@@ -196,6 +207,8 @@ QByteArray DataMessage::ToByteArray() const {
   buf = WriteElementVector(lines, buf);
   buf = WriteElementVector(arcs, buf);
   buf = WriteElementVector(text_annotations, buf);
+  buf = WriteElementVector(vis_image, buf);
+  buf = WriteElementVector(bev_image, buf);
   return data;
 }
 
@@ -203,7 +216,9 @@ DataMessage DataMessage::FromRosMessages(
       const LaserScan& laser_msg,
       const VisualizationMsg& local_msg,
       const VisualizationMsg& global_msg,
-      const Localization2DMsg& localization_msg) {
+      const Localization2DMsg& localization_msg,
+      const CompressedImage& vis_image_msg,
+      const CompressedImage& bev_image_msg) {
   static const bool kDebug = false;
   DataMessage msg;
   for (size_t i = 0; i < sizeof(msg.header.map); ++i) {
@@ -218,6 +233,8 @@ DataMessage DataMessage::FromRosMessages(
   msg.header.laser_min_angle = laser_msg.angle_min;
   msg.header.laser_max_angle = laser_msg.angle_max;
   msg.header.num_laser_rays = laser_msg.ranges.size();
+  msg.header.vis_image_size = vis_image_msg.data.size();
+  msg.header.bev_image_size = bev_image_msg.data.size();
   msg.laser_scan.resize(laser_msg.ranges.size());
   for (size_t i = 0; i < laser_msg.ranges.size(); ++i) {
     if (laser_msg.ranges[i] <= laser_msg.range_min || 
@@ -271,6 +288,14 @@ DataMessage DataMessage::FromRosMessages(
     msg.text_annotations.push_back(localText);
   }
 
+  for (size_t i = 0; i < vis_image_msg.data.size(); ++i) {
+    msg.vis_image[i] = vis_image_msg.data[i];
+  }
+
+  for (size_t i = 0; i < bev_image_msg.data.size(); ++i) {
+    msg.bev_image[i] = bev_image_msg.data[i];
+  }
+
   if (kDebug) {
     printf("nonce: %d "
            "num_points: %d "
@@ -281,7 +306,9 @@ DataMessage DataMessage::FromRosMessages(
            "num_local_points: %d "
            "num_local_lines: %d "
            "num_local_arcs: %d "
-           "num_local_text_annotations: %d\n",
+           "num_local_text_annotations: %d"
+           "vis_image_size: %d"
+           "bev_image_size: %d\n",
            msg.header.nonce,
            msg.header.num_points,
            msg.header.num_lines,
@@ -291,7 +318,9 @@ DataMessage DataMessage::FromRosMessages(
            msg.header.num_local_points,
            msg.header.num_local_lines,
            msg.header.num_local_arcs,
-           msg.header.num_local_text_annotations);
+           msg.header.num_local_text_annotations,
+           msg.header.vis_image_size,
+           msg.header.bev_image_size);
   }
   return msg;
 }
@@ -370,6 +399,8 @@ void RobotWebSocket::processTextMessage(QString message) {
     header.num_laser_rays = 270 * 4;
     header.laser_min_angle = -135;
     header.laser_max_angle = 135;
+    header.vis_image_size = 16;
+    header.bev_image_size = 32;
     const DataMessage data_msg = GenerateTestData(header);
     printf("Test message data size: %lu\n", header.GetByteLength());
     client->sendBinaryMessage(data_msg.ToByteArray());
@@ -402,7 +433,7 @@ void RobotWebSocket::SendDataSlot() {
   if (clients_.empty()) return;
   data_mutex_.lock();
   const auto data = DataMessage::FromRosMessages(
-      laser_scan_, local_vis_, global_vis_, localization_);
+      laser_scan_, local_vis_, global_vis_, localization_, vis_image_, bev_image_);
   const auto buffer = data.ToByteArray();
   CHECK_EQ(data.header.GetByteLength(), buffer.size());
   for (auto c : clients_) {
@@ -414,12 +445,16 @@ void RobotWebSocket::SendDataSlot() {
 void RobotWebSocket::Send(const VisualizationMsg& local_vis,
                           const VisualizationMsg& global_vis,
                           const LaserScan& laser_scan,
-                          const Localization2DMsg& localization) {
+                          const Localization2DMsg& localization,
+                          const CompressedImage& vis_image,
+                          const CompressedImage& bev_image) {
   data_mutex_.lock();
   localization_ = localization;
   local_vis_ = local_vis;
   global_vis_ = global_vis;
   laser_scan_ = laser_scan;
+  vis_image_ = vis_image;
+  bev_image_ = bev_image;
   data_mutex_.unlock();
   SendDataSignal();
 }

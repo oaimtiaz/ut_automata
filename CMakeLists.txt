@@ -65,6 +65,7 @@ IF(${CMAKE_BUILD_MODE} MATCHES "Hardware")
                           src/vesc_driver/vesc_interface.cpp
                           src/vesc_driver/vesc_packet.cpp
                           src/vesc_driver/vesc_packet_factory.cpp)
+
   target_link_libraries(vesc_driver ${libs})
 
   ROSBUILD_ADD_EXECUTABLE(gui
@@ -103,9 +104,12 @@ ROSBUILD_ADD_EXECUTABLE(websocket
     src/websocket/websocket_main.cc
     src/websocket/websocket.cc
 )
+
+
 TARGET_LINK_LIBRARIES(websocket
     Qt5::Core
     Qt5::Gui
     Qt5::Widgets
     Qt5::WebSockets
-    ${libs})
+    ${libs}
+)

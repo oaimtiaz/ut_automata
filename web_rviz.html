@@ -14,7 +14,7 @@
       background: #eee;
     }
 
-    #canvas {
+    .canvas {
       background: #fff;
       user-select: none;
       -webkit-user-select: none;
@@ -70,20 +70,22 @@
     <option value="EmptyMap">EmptyMap</option>
   </select>
   <br>
-  <canvas id="canvas" width="800" height="600" tabindex="0"> </canvas>
+  <canvas class="canvas" id="localization" width="800" height="300" tabindex="0"> </canvas>
+  <br>
+  <canvas class="canvas" id="vis_im" width="400" height="300" tabindex="0"> </canvas>
+  <canvas class="canvas" id="bev_im" width="400" height="300" tabindex="0"> </canvas>
   <br>
   <label id="coords">0,0</label>
 
 
   <script type="text/javascript" type="text/javascript">
-    var canvas = document.getElementById("canvas");
+    var localizationCanvas = document.getElementById("localization");
+    var im1Canvas = document.getElementById("vis_im");
+    var im2Canvas = document.getElementById("bev_im");
     var visMsg = undefined;
     var scale = 20;
-    var origin = { x: 0.5 * canvas.width, y: 0.5 * canvas.height };
+    var origin = { x: 0.5 * localizationCanvas.width, y: 0.5 * localizationCanvas.height };
     var prev_origin = { x: 0, y: 0 };
-    var ctx = canvas.getContext("2d");
-    ctx.textAlign = "end";
-    ctx.textBaseline = "top";
     var mouseDownLoc;
     var curMouseLoc;
     var mouseDown = false;
@@ -95,6 +97,8 @@
     var tLastDraw = 0;
     var map = [];
     var lastLaserScan = undefined;
+    var lastVisImage = undefined;
+    var lastBevImage = undefined;
     var robot_interface = undefined;
     var currentMapName = '';
 
@@ -106,14 +110,14 @@
     } catch (e) {
       updateStatus('Unable to access localstorage, IP will not be saved');
     }
-    canvas.width = window.innerWidth;
-    canvas.height = Math.max(600, window.innerHeight - 175);
-    origin = { x: 0.5 * canvas.width, y: 0.5 * canvas.height };
-    canvas.addEventListener('wheel', onMouseScroll, false);
+    localizationCanvas.width = window.innerWidth;
+    localizationCanvas.height = Math.max(300, Math.floor(window.innerHeight / 2) - 88);
+    origin = { x: 0.5 * localizationCanvas.width, y: 0.5 * localizationCanvas.height };
+    localizationCanvas.addEventListener('wheel', onMouseScroll, false);
     window.addEventListener("keypress", onKeyPress, false);
-    canvas.onmouseup = onMouseUp;
-    canvas.onmousedown = onMouseDown;
-    canvas.onmousemove = onMouseMove;
+    localizationCanvas.onmouseup = onMouseUp;
+    localizationCanvas.onmousedown = onMouseDown;
+    localizationCanvas.onmousemove = onMouseMove;
     changeMap();
 
     class DataParser {
@@ -128,6 +132,8 @@
           num_local_lines: 0,
           num_local_arcs: 0,
           num_local_text_annotations: 0,
+          vis_image_size: 0,
+          bev_image_size: 0,
           laser_min_angle: 0,
           laser_max_angle: 0,
           robot_pose: { x: NaN, y: NaN, theta: NaN },
@@ -200,6 +206,8 @@
         this.header.num_local_lines = this.readUint32();
         this.header.num_local_arcs = this.readUint32();
         this.header.num_local_text_annotations = this.readUint32();
+        this.header.vis_image_size = this.readUint32();
+        this.header.bev_image_size = this.readUint32();
         this.header.laser_min_angle = this.readFloat32();
         this.header.laser_max_angle = this.readFloat32();
         this.header.robot_pose = this.readPose();
@@ -237,6 +245,10 @@
           laser.ranges[i] = 0.001 * laser.ranges[i];
         }
         return laser;
+      }
+
+      readImage(n) {
+        let image = this.readMultiple(n, () => this.readUint8())
       }
 
       readColor() {
@@ -302,6 +314,8 @@
           lines: this.readMultiple(this.header.num_lines, () => this.readLine()),
           arcs: this.readMultiple(this.header.num_arcs, () => this.readArc()),
           textAnnotations: this.readMultiple(this.header.num_text_annotations, () => this.readTextMessage()),
+          visImg: this.readImage(this.header.vis_image_size),
+          bevImg: this.readImage(this.header.bev_image_size),
           robotPose: undefined
         }
         message.robotPose = message.header.robot_pose;
@@ -476,7 +490,7 @@
       document.getElementById("setNavGoal").style = "border-style:inset;";
     }
 
-    // Get the "true" mouse location, compensting for scroll, zoom, etc.
+    // Get the "true" mouse location, compensating for scroll, zoom, etc.
     function getMouseLocation(event, element) {
       var posx = 0;
       var posy = 0;
@@ -514,7 +528,7 @@
     }
 
     function onMouseMove(event) {
-      curMouseLoc = getMouseLocation(event, canvas);
+      curMouseLoc = getMouseLocation(event, localizationCanvas);
       w = canvasToWorld(curMouseLoc);
       const x_str = w.x.toFixed(3);
       const y_str = w.y.toFixed(3);
@@ -526,7 +540,7 @@
     };
 
     function onMouseDown(event) {
-      mouseDownLoc = getMouseLocation(event, canvas);
+      mouseDownLoc = getMouseLocation(event, localizationCanvas);
       mouseDown = true;
       prev_origin = { x: origin.x, y: origin.y };
       if (event.ctrlKey) {
@@ -537,7 +551,7 @@
     };
 
     function onMouseUp(event) {
-      let loc = getMouseLocation(event, canvas);
+      let loc = getMouseLocation(event, localizationCanvas);
       let w = canvasToWorld(loc);
       if (setNavGoal) {
         // Set nav target here.
@@ -567,7 +581,7 @@
     }
 
     function onMouseScroll(event) {
-      let loc = getMouseLocation(event, canvas);
+      let loc = getMouseLocation(event, localizationCanvas);
       let s1 = scale;
       if (event.deltaY > 0) {
         scale *= 0.95;
@@ -611,6 +625,11 @@
       ctx.fillText(text, p.x, p.y);
     }
 
+    function drawImage(image_data, canvas_id) {
+      let c = document.getElementById(canvas_id);
+      c.src = 'data:image/jpeg;base64,' + image_data;
+    }
+
     function updateStatus(str) {
       let s = document.getElementById("status");
       s.innerHTML = str;
@@ -620,6 +639,8 @@
       visMsg = d;
       lastLaserScan = d.laser;
       robotPose = d.robotPose;
+      lastVisImage = d.visImg;
+      lastBevImage = d.bevImg;
     }
 
     function processJsonData(json) {
@@ -672,7 +693,9 @@
 
     function drawLoop() {
       requestAnimationFrame(drawLoop);
-      draw();
+      drawVisualization();
+      drawVisImage();
+      drawBevImage();
     }
 
     window.onload = function () {
@@ -720,13 +743,13 @@
       drawLine(kPoseColor, p3.x, p3.y, p1.x, p1.y);
     }
 
-    function draw() {
+    function drawVisualization() {
       const kDrawInterval = 0.03;
       const tNow = window.performance.now();
       if (tNow - tLastDraw < kDrawInterval) return;
       tLastDraw = tNow;
       // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, localizationCanvas.width, localizationCanvas.height);
       if (visMsg && currentMapName !== visMsg.header.map) {
         // currentMapName = visMsg.header.map;
         // loadMap(visMsg.header.map);
@@ -746,6 +769,16 @@
         drawLine("#000000", p0.x, p0.y, p1.x, p1.y);
       }
       if (visMsg) drawPose(visMsg.header.robot_pose, 'rgb(0, 150, 0)');
+    }
+
+    function drawVisImage() {
+      if (visMsg === undefined) return;
+      drawImage(visMsg.visImg, 'vis_im');
+    }
+
+    function drawBevImage() {
+      if (visMsg === undefined) return;
+      drawImage(visMsg.bevImg, 'bev_im');
     }
 
     function setColor(c) {

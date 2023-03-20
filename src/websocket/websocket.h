@@ -37,6 +37,8 @@
 #include "amrl_msgs/ColoredText.h"
 #include "amrl_msgs/VisualizationMsg.h"
 #include "sensor_msgs/LaserScan.h"
+#include "sensor_msgs/CompressedImage.h"
+
 
 class QWebSocketServer;
 class QWebSocket;
@@ -53,19 +55,23 @@ struct MessageHeader {
   uint32_t num_local_lines;           // 8
   uint32_t num_local_arcs;            // 9
   uint32_t num_local_text_annotations;// 10
-  float laser_min_angle;              // 11
-  float laser_max_angle;              // 12
-  float loc_x;                        // 13
-  float loc_y;                        // 14
-  float loc_r;                        // 15
+  uint32_t vis_image_size;            // 11
+  uint32_t bev_image_size;            // 12
+  float laser_min_angle;              // 13
+  float laser_max_angle;              // 14
+  float loc_x;                        // 15
+  float loc_y;                        // 16
+  float loc_r;                        // 17
   char map[32];                       //
   size_t GetByteLength() const {
-    const size_t len = 15 * 4 + 32 + // header fields + map data
-        num_laser_rays * 4 +   // each ray is uint32_t
-        num_points * 3 * 4 +   // x, y, color
-        num_lines * 5 * 4 +    // x1, y1, x2, y2, color
+    const size_t len = 17 * 4 + 32 + // header fields + map data
+        num_laser_rays * 4 +    // each ray is uint32_t
+        num_points * 3 * 4 +    // x, y, color
+        num_lines * 5 * 4 +     // x1, y1, x2, y2, color
         num_arcs * 6 * 4 +      // x, y, radius, start_angle, end_angle, color
-        num_text_annotations * 4 * 4 * 32; // x, y, color, size, msg
+        num_text_annotations * 4 * 4 * 32 + // x, y, color, size, msg
+        vis_image_size +        // each element is uint8_t
+        bev_image_size;         // each element is uint8_t
     return len;
   }
 };
@@ -84,12 +90,16 @@ struct DataMessage {
   std::vector<amrl_msgs::ColoredLine2D> lines;
   std::vector<amrl_msgs::ColoredArc2D> arcs;
   std::vector<ColoredTextNative> text_annotations;
+  std::vector<uint8_t> vis_image;
+  std::vector<uint8_t> bev_image;
   QByteArray ToByteArray() const;
   static DataMessage FromRosMessages(
       const sensor_msgs::LaserScan& laser_msg,
       const amrl_msgs::VisualizationMsg& local_msg,
       const amrl_msgs::VisualizationMsg& global_msg,
-      const amrl_msgs::Localization2DMsg& localization_msg);
+      const amrl_msgs::Localization2DMsg& localization_msg,
+      const sensor_msgs::CompressedImage& vis_image_msg,
+      const sensor_msgs::CompressedImage& bev_image_msg);
 };
 
 class RobotWebSocket : public QObject {
@@ -100,7 +110,9 @@ public:
   void Send(const amrl_msgs::VisualizationMsg& local_vis,
             const amrl_msgs::VisualizationMsg& global_vis,
             const sensor_msgs::LaserScan& laser_scan,
-            const amrl_msgs::Localization2DMsg& localization);
+            const amrl_msgs::Localization2DMsg& localization,
+            const sensor_msgs::CompressedImage& vis_image,
+            const sensor_msgs::CompressedImage& bev_image);
 
 Q_SIGNALS:
   void closed();
@@ -128,6 +140,8 @@ private:
   amrl_msgs::VisualizationMsg global_vis_;
   sensor_msgs::LaserScan laser_scan_;
   amrl_msgs::Localization2DMsg localization_;
+  sensor_msgs::CompressedImage vis_image_;
+  sensor_msgs::CompressedImage bev_image_;
 };
 
 #endif //ECHOSERVER_H

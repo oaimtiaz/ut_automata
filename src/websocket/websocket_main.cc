@@ -28,7 +28,7 @@
 #include "glog/logging.h"
 #include "ros/ros.h"
 #include "sensor_msgs/LaserScan.h"
-
+#include "sensor_msgs/CompressedImage.h"
 #include "amrl_msgs/VisualizationMsg.h"
 #include "amrl_msgs/Localization2DMsg.h"
 #include "math/math_util.h"
@@ -38,6 +38,7 @@
 using amrl_msgs::VisualizationMsg;
 using amrl_msgs::Localization2DMsg;
 using sensor_msgs::LaserScan;
+using sensor_msgs::CompressedImage;
 using std::vector;
 
 DEFINE_double(fps, 10.0, "Max visualization frames rate.");
@@ -53,6 +54,8 @@ amrl_msgs::Localization2DMsg amrl_initial_pose_msg_;
 amrl_msgs::Localization2DMsg amrl_nav_goal_msg_;
 Localization2DMsg localization_msg_;
 LaserScan laser_scan_;
+CompressedImage vis_image_;
+CompressedImage bev_image_;
 ros::Publisher init_loc_pub_;
 ros::Publisher amrl_init_loc_pub_;
 ros::Publisher nav_goal_pub_;
@@ -97,6 +100,16 @@ void VisualizationCallback(const VisualizationMsg& msg) {
   updates_pending_ = true;
 }
 
+void VisImageCallback(const CompressedImage& msg) {
+  vis_image_ = msg;
+  updates_pending_ = true;
+}
+
+void BevImageCallback(const CompressedImage& msg) {
+  bev_image_ = msg;
+  updates_pending_ = true;
+}
+
 template <typename T>
 void MergeVector(const std::vector<T> &v1, std::vector<T> *v2) {
   v2->insert(v2->end(), v1.begin(), v1.end());
@@ -117,6 +130,15 @@ void DropOldMessages() {
   if ((now - laser_scan_.header.stamp).toSec() > FLAGS_max_age) {
     laser_scan_.header.stamp = ros::Time(0);
   }
+
+  if ((now - vis_image_.header.stamp).toSec() > FLAGS_max_age) {
+    vis_image_.header.stamp = ros::Time(0);
+  }
+
+  if ((now - bev_image_.header.stamp).toSec() > FLAGS_max_age) {
+    bev_image_.header.stamp = ros::Time(0);
+  }
+
   std::remove_if(
       vis_msgs_.begin(),
       vis_msgs_.end(),
@@ -131,7 +153,8 @@ void SendUpdate() {
   }
   // DropOldMessages();
   updates_pending_ = false;
-  if (laser_scan_.header.stamp.toSec() == 0 && vis_msgs_.empty()) {
+  if (laser_scan_.header.stamp.toSec() == 0 && vis_msgs_.empty() && 
+      vis_image_.header.stamp.toSec() == 0 && bev_image_.header.stamp.toSec() == 0) {
     return;
   }
   VisualizationMsg local_msgs;
@@ -147,7 +170,9 @@ void SendUpdate() {
   server_->Send(local_msgs,
                 global_msgs,
                 laser_scan_,
-                localization_msg_);
+                localization_msg_,
+                vis_image_,
+                bev_image_);
 }
 
 void SetInitialPose(float x, float y, float theta, QString map) {
@@ -203,6 +228,10 @@ void *RosThread(void *arg) {
       n.subscribe("/visualization", 10, &VisualizationCallback);
   ros::Subscriber localization_sub =
       n.subscribe("/localization", 10, &LocalizationCallback);
+  ros::Subscriber vis_image_sub = 
+      n.subscribe("/vis_image/compressed", 10, &VisImageCallback);
+  ros::Subscriber bev_image_sub = 
+      n.subscribe("/bev/single/compressed", 10, &BevImageCallback);
   init_loc_pub_ =
       n.advertise<geometry_msgs::PoseWithCovarianceStamped>("/initialpose", 10);
   nav_goal_pub_ =
