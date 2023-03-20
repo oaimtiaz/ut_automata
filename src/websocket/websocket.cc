@@ -288,10 +288,12 @@ DataMessage DataMessage::FromRosMessages(
     msg.text_annotations.push_back(localText);
   }
 
+  msg.vis_image.resize(msg.header.vis_image_size);
   for (size_t i = 0; i < vis_image_msg.data.size(); ++i) {
     msg.vis_image[i] = vis_image_msg.data[i];
   }
 
+  msg.bev_image.resize(msg.header.bev_image_size);
   for (size_t i = 0; i < bev_image_msg.data.size(); ++i) {
     msg.bev_image[i] = bev_image_msg.data[i];
   }

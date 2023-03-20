@@ -86,6 +86,9 @@
     var scale = 20;
     var origin = { x: 0.5 * localizationCanvas.width, y: 0.5 * localizationCanvas.height };
     var prev_origin = { x: 0, y: 0 };
+    var ctx = localizationCanvas.getContext("2d");
+    ctx.textAlign = "end";
+    ctx.textBaseline = "top";
     var mouseDownLoc;
     var curMouseLoc;
     var mouseDown = false;
@@ -772,6 +775,7 @@
     }
 
     function drawVisImage() {
+
       if (visMsg === undefined) return;
       drawImage(visMsg.visImg, 'vis_im');
     }
