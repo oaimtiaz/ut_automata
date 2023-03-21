@@ -93,7 +93,7 @@ struct DataMessage {
   std::vector<uint8_t> vis_image;
   std::vector<uint8_t> bev_image;
   QByteArray ToByteArray() const;
-  static DataMessage FromRosMessages(
+  static  DataMessage FromRosMessages(
       const sensor_msgs::LaserScan& laser_msg,
       const amrl_msgs::VisualizationMsg& local_msg,
       const amrl_msgs::VisualizationMsg& global_msg,

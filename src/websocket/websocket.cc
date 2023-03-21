@@ -287,7 +287,7 @@ DataMessage DataMessage::FromRosMessages(
     localText.text[size] = 0;
     msg.text_annotations.push_back(localText);
   }
-
+  
   msg.vis_image.resize(msg.header.vis_image_size);
   for (size_t i = 0; i < vis_image_msg.data.size(); ++i) {
     msg.vis_image[i] = vis_image_msg.data[i];

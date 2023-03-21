@@ -72,8 +72,8 @@
   <br>
   <canvas class="canvas" id="localization" width="800" height="300" tabindex="0"> </canvas>
   <br>
-  <canvas class="canvas" id="vis_im" width="400" height="300" tabindex="0"> </canvas>
-  <canvas class="canvas" id="bev_im" width="400" height="300" tabindex="0"> </canvas>
+  <img class="canvas" id="vis_im" width="400" height="300" tabindex="0"> </img>
+  <img class="canvas" id="bev_im" width="400" height="300" tabindex="0"> </img>
   <br>
   <label id="coords">0,0</label>
 
@@ -115,6 +115,10 @@
     }
     localizationCanvas.width = window.innerWidth;
     localizationCanvas.height = Math.max(300, Math.floor(window.innerHeight / 2) - 88);
+    im1Canvas.width = Math.floor(window.innerWidth / 2) - 10;
+    im1Canvas.height = Math.max(300, Math.floor(window.innerHeight / 2) - 88);
+    im2Canvas.width = Math.floor(window.innerWidth / 2) - 10;
+    im2Canvas.height = Math.max(300, Math.floor(window.innerHeight / 2) - 88);
     origin = { x: 0.5 * localizationCanvas.width, y: 0.5 * localizationCanvas.height };
     localizationCanvas.addEventListener('wheel', onMouseScroll, false);
     window.addEventListener("keypress", onKeyPress, false);
@@ -188,11 +192,11 @@
       readString() {
         let s = '';
         let end_of_str = false;
-        for (let i = 0; i < 32 & !end_of_str; i++) {
+        for (let i = 0; i < 32; i++) {
           const c = this.readUint8();
           if(c==0) {
             end_of_str = true;
-          } else {
+          } else if (!end_of_str) {
             s += String.fromCharCode(c)
           }
         }
@@ -251,7 +255,8 @@
       }
 
       readImage(n) {
-        let image = this.readMultiple(n, () => this.readUint8())
+        let image = this.readMultiple(n, () => this.readUint8());
+        return image;
       }
 
       readColor() {
@@ -628,7 +633,21 @@
       ctx.fillText(text, p.x, p.y);
     }
 
+    function Uint8ToString(u8a){
+      var CHUNK_SZ = 0x8000;
+      var c = [];
+      for (var i=0; i < u8a.length; i+=CHUNK_SZ) {
+        c.push(String.fromCharCode.apply(null, u8a.subarray(i, i+CHUNK_SZ)));
+      }
+      return c.join("");
+    }
+    // Usage
+    var u8 = new Uint8Array([65, 66, 67, 68]);
+    var b64encoded = btoa(Uint8ToString(u8));
+
     function drawImage(image_data, canvas_id) {
+      image_data = new Uint8Array(image_data);
+      image_data = btoa(Uint8ToString(image_data));
       let c = document.getElementById(canvas_id);
       c.src = 'data:image/jpeg;base64,' + image_data;
     }
@@ -775,7 +794,6 @@
     }
 
     function drawVisImage() {
-
       if (visMsg === undefined) return;
       drawImage(visMsg.visImg, 'vis_im');
     }
